@@ -1,95 +1,78 @@
 <?php
 
-use Bitrix\Main\Application;
-use Bitrix\Main\Config\Option;
-use Bitrix\Main\Localization\Loc;
-use Bitrix\Main\Text\String;
+include(GetLangFileName($GLOBALS['DOCUMENT_ROOT'].'/bitrix/modules/popov/lang/', '/options.php'));
+IncludeModuleLangFile($_SERVER['DOCUMENT_ROOT'].BX_ROOT.'/modules/main/options.php');
 
-defined('ADMIN_MODULE_NAME') or define('ADMIN_MODULE_NAME', 'popov');
+$module_id = 'popov';
+CModule::IncludeModule($module_id);
 
-if (!$USER->isAdmin()) {
-    $APPLICATION->authForm('Nope');
-}
+$defaultOptions = \Bitrix\Main\Config\Option::getDefaults($module_id); // настройки по умолчанию
 
-$app = Application::getInstance();
-$context = $app->getContext();
-$request = $context->getRequest();
+CModule::IncludeModule('iblock');
+$MOD_RIGHT = $APPLICATION->GetGroupRight($module_id);
+if($MOD_RIGHT>='R'):
 
-Loc::loadMessages($context->getServer()->getDocumentRoot()."/bitrix/modules/main/options.php");
-Loc::loadMessages(__FILE__);
-$RIGHT = $APPLICATION->GetGroupRight(ADMIN_MODULE_NAME);
-if($RIGHT >= "R") :
-$defaultOptions = \Bitrix\Main\Config\Option::getDefaults(ADMIN_MODULE_NAME); // настройки по умолчанию
-$arAllOptions = Array( // доступные нам поля для настроек
-    //array(ид в языковом файле, значение по умолчанию, имя поля,),
-    array("REFERENCES_MAX_IMAGE_SIZE", $defaultOptions['max_image_size'], "max_image_size", ),
-    array("REFERENCES_DATE_FORMAT", $defaultOptions['date_format'], "date_format", ),
-);
+	// set up form
+	$arAllOptions = Array( // доступные нам поля для настроек
+		array("date_format", GetMessage('REFERENCES_DATE_FORMAT'), $defaultOptions['date_format'], array('text') ),
+		array("max_image_size", GetMessage('REFERENCES_MAX_IMAGE_SIZE'), $defaultOptions['max_image_size'], array('text') ),
+	);
 
-// вкоалки модуля
-$tabControl = new CAdminTabControl("tabControl", array(
-    array(
-        "DIV" => "edit1",
-        "TAB" => Loc::getMessage("MAIN_TAB_SET"),
-        "TITLE" => Loc::getMessage("MAIN_TAB_TITLE_SET"),
-    ),
-	array(
-		"DIV" => "edit2", 
-		"TAB" => GetMessage("MAIN_TAB_RIGHTS"), 
-		"ICON" => "perfmon_settings", 
-		"TITLE" => GetMessage("MAIN_TAB_TITLE_RIGHTS")
-	),
-));
+if($MOD_RIGHT>='Y' || $USER->IsAdmin()):
 
-// сохранение данных
-if ((!empty($save) || !empty($restore)) && $request->isPost() && check_bitrix_sessid()) {
+	/*if ($REQUEST_METHOD=='GET' && strlen($RestoreDefaults)>0 && check_bitrix_sessid()){
+		COption::RemoveOption($module_id);
+		$z = CGroup::GetList($v1='id',$v2='asc', array('ACTIVE' => 'Y', 'ADMIN' => 'N'));
+		while($zr = $z->Fetch())
+			$APPLICATION->DelGroupRight($module_id, array($zr['ID']));
+	} */
 
-    if (!empty($restore)) {
-        Option::delete(ADMIN_MODULE_NAME);
-        CAdminMessage::showMessage(array(
-            "MESSAGE" => Loc::getMessage("REFERENCES_OPTIONS_RESTORED"),
-            "TYPE" => "OK",
-        ));
-    } elseif ($request->getPost('save_data') && ($request->getPost('save_data') > 0)) {
+	if($REQUEST_METHOD=='POST' && strlen($Update)>0 && check_bitrix_sessid()){
+		foreach($arAllOptions as $option){
+			if(!is_array($option) || isset($option['note']))
+				continue;
 
-        foreach($arAllOptions as $arOption){
-			Option::set(ADMIN_MODULE_NAME, $arOption[2], $request->getPost($arOption[2]) );
-        }
-		
-        CAdminMessage::showMessage(array(
-            "MESSAGE" => Loc::getMessage("REFERENCES_OPTIONS_SAVED"),
-            "TYPE" => "OK",
-        ));
-    } else {
-        CAdminMessage::showMessage(Loc::getMessage("REFERENCES_INVALID_VALUE"));
-    }
-	
-}
+			$name = $option[0];
+			$val = ${$name};
+			if($option[3][0] == 'checkbox' && $val != 'Y')
+				$val = 'N';
+			if($option[3][0] == 'multiselectbox')
+				$val = @implode(',', $val);
+			if ($name == 'image_max_width' || $name == 'image_max_height')
+				$val = (int) $val;
+			
+			COption::SetOptionString($module_id, $name, $val, $option[1]);
+		}
+	}
+
+endif; //if($MOD_RIGHT>="W"):
+
+$aTabs = array();
+$aTabs[] = array('DIV' => 'set', 'TAB' => GetMessage('MAIN_TAB_SET'), 'ICON' => 'popov_settings', 'TITLE' => GetMessage('MAIN_TAB_TITLE_SET'));
+$aTabs[] = array('DIV' => 'rights', 'TAB' => GetMessage('MAIN_TAB_RIGHTS'), 'ICON' => 'popov_settings', 'TITLE' => GetMessage('MAIN_TAB_TITLE_RIGHTS'));
+
+$tabControl = new CAdminTabControl('tabControl', $aTabs);
 ?>
-<?$tabControl->begin();?>
-<form method="post" action="<?=sprintf('%s?mid=%s&lang=%s', $request->getRequestedPage(), urlencode($mid), LANGUAGE_ID)?>">
-    <?php
-    echo bitrix_sessid_post();
-    $tabControl->beginNextTab(); 
-    ?>
-	<? foreach($arAllOptions as $arOption):?>
-    <tr>
-        <td width="40%">
-            <label for="<?=$arOption[2]?>"><?=Loc::getMessage($arOption[0]) ?>:</label>
-        <td width="60%">
-            <input type="text" size="50" id="<?=$arOption[2]?>" name="<?=$arOption[2]?>" value="<?=String::htmlEncode(Option::get(ADMIN_MODULE_NAME, $arOption[2], $defaultOptions[$arOption[2]]));?>" />
-        </td>
-    </tr>
-	<? endforeach;?>
-    
-	<?$tabControl->BeginNextTab();?>
-    <?require_once($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/admin/group_rights.php");?>
-	
-    <?php $tabControl->buttons(); ?>
-    <input type="hidden" name="save_data" value="1" />
-	<input type="submit" name="save" value="<?=Loc::getMessage("MAIN_SAVE") ?>" title="<?=Loc::getMessage("MAIN_OPT_SAVE_TITLE") ?>" class="adm-btn-save" <?if ($RIGHT<"W") echo "disabled" ?> />
-    <input type="submit" name="restore" title="<?=Loc::getMessage("MAIN_HINT_RESTORE_DEFAULTS") ?>" onclick="return confirm('<?= AddSlashes(GetMessage("MAIN_HINT_RESTORE_DEFAULTS_WARNING")) ?>')" value="<?=Loc::getMessage("MAIN_RESTORE_DEFAULTS") ?>" <?if ($RIGHT<"W") echo "disabled" ?> />
-    <?php $tabControl->end(); ?>
+<? $tabControl->Begin(); ?>
+<form method="POST" action="<?echo $APPLICATION->GetCurPage()?>?mid=<?=htmlspecialcharsbx($mid)?>&lang=<?=LANGUAGE_ID?>" name="popov_settings">
+<?$tabControl->BeginNextTab();?>
+<?__AdmSettingsDrawList('popov', $arAllOptions);?>
+<?$tabControl->BeginNextTab();?>
+<?require_once($_SERVER['DOCUMENT_ROOT'].'/bitrix/modules/main/admin/group_rights.php');?>
+<?$tabControl->Buttons();?>
+<script language="JavaScript">
+function RestoreDefaults()
+{
+	if(confirm('<?echo AddSlashes(GetMessage('MAIN_HINT_RESTORE_DEFAULTS_WARNING'))?>'))
+		window.location = "<?echo $APPLICATION->GetCurPage()?>?RestoreDefaults=Y&lang=<?echo LANG?>&mid=<?echo rawurlencode($mid)."&".bitrix_sessid_get();?>";
+}
+</script>
+<input type="submit" name="Update" <?if ($MOD_RIGHT<'W') echo "disabled" ?> value="<?echo GetMessage('MAIN_SAVE')?>">
+<input type="reset" name="reset" value="<?echo GetMessage('MAIN_RESET')?>">
+<input type="hidden" name="Update" value="Y">
+<?=bitrix_sessid_post();?>
+<input type="button" <?if ($MOD_RIGHT<'W') echo "disabled" ?> title="<?echo GetMessage('MAIN_HINT_RESTORE_DEFAULTS')?>" OnClick="RestoreDefaults();" value="<?echo GetMessage('MAIN_RESTORE_DEFAULTS')?>">
+<?$tabControl->End();?>
 </form>
-
-<?endif;?>
+<?endif;
+?>
